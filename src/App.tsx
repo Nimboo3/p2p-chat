@@ -1,95 +1,82 @@
-import React, { useState, useEffect } from 'react';
-import { invoke } from '@tauri-apps/api/core';
-import { listen } from '@tauri-apps/api/event';
+import React, { useState, useEffect } from "react";
+import { invoke } from "@tauri-apps/api/core";
+import { listen } from "@tauri-apps/api/event";
 import "./App.css";
 
 const App: React.FC = () => {
-  const [ticket, setTicket] = useState<string>('');
-  const [joinTicket, setJoinTicket] = useState<string>('');
-  const [message, setMessage] = useState<string>('');
-  const [chatLog, setChatLog] = useState<string[]>([]);
+  const [isLoggedIn, setIsLoggedIn] = useState<boolean>(false);
+  const [username, setUsername] = useState<string>("");
+  const [password, setPassword] = useState<string>("");
+  const [isRegistering, setIsRegistering] = useState<boolean>(false);
+  const [authMessage, setAuthMessage] = useState<string>("");
+  const [passwordStrength, setPasswordStrength] = useState<string>("");
 
-  // Listen for incoming messages from the backend.
-  useEffect(() => {
-    const unlistenPromise = listen<string>('new-message', (event) => {
-      setChatLog((prev) => [...prev, event.payload]);
-    });
-    return () => {
-      unlistenPromise.then((unlisten) => unlisten());
-    };
-  }, []);
+  // Check password strength
+  const checkPasswordStrength = (password: string) => {
+    let score = 0;
+    if (password.length >= 8) score++;
+    if (/[A-Z]/.test(password)) score++;
+    if (/[a-z]/.test(password)) score++;
+    if (/[0-9]/.test(password)) score++;
+    if (/[^A-Za-z0-9]/.test(password)) score++;
 
-  // Create a new chat room.
-  const createRoom = async () => {
+    const levels = ["Weak", "Fair", "Good", "Strong", "Very Strong"];
+    setPasswordStrength(levels[score]);
+  };
+
+  // Register a new user
+  const register = async () => {
+    if (passwordStrength === "Weak" || passwordStrength === "Fair") {
+      setAuthMessage("Password is too weak.");
+      return;
+    }
     try {
-      const result: string = await invoke('create_chat_room');
-      setTicket(result);
+      const response: string = await invoke("register", { creds: { username, password } });
+      setAuthMessage(response);
+      setIsRegistering(false);
     } catch (err) {
-      console.error('Error creating room:', err);
+      setAuthMessage("Error: " + err);
     }
   };
 
-  // Join an existing chat room using the provided ticket.
-  const joinRoom = async () => {
+  // Login user
+  const login = async () => {
     try {
-      await invoke('join_chat_room', { ticket: joinTicket });
+      const response: string = await invoke("login", { creds: { username, password } });
+      setAuthMessage(response);
+      setIsLoggedIn(true);
     } catch (err) {
-      console.error('Error joining room:', err);
-    }
-  };
-
-  // Send a message on the active chat session.
-  const sendMsg = async () => {
-    try {
-      await invoke('send_message', { message });
-      setChatLog((prev) => [...prev, `Me: ${message}`]);
-      setMessage('');
-    } catch (err) {
-      console.error('Error sending message:', err);
+      setAuthMessage("Error: " + err);
     }
   };
 
   return (
-    <div style={{ margin: '2rem' }}>
+    <div className="container">
       <h2>P2P Chat</h2>
 
-      <section>
-        <h3>Create Chat Room</h3>
-        <button onClick={createRoom}>Create Room</button>
-        {ticket && (
-          <p>
-            Your room ticket: <code>{ticket}</code>
-          </p>
-        )}
-      </section>
-
-      <section>
-        <h3>Join Chat Room</h3>
-        <input
-          type="text"
-          value={joinTicket}
-          onChange={(e) => setJoinTicket(e.target.value)}
-          placeholder="Enter room ticket"
-        />
-        <button onClick={joinRoom}>Join Room</button>
-      </section>
-
-      <section>
-        <h2>Chat</h2>
-        <div style={{ border: '1px solid #ccc', padding: '1rem', height: '160px', overflowY: 'scroll' }}>
-          {chatLog.map((msg, idx) => (
-            <p key={idx}>{msg}</p>
-          ))}
-        </div>
-        <input
-          type="text"
-          value={message}
-          onChange={(e) => setMessage(e.target.value)}
-          placeholder="Type your message"
-          style={{ width: '70%' }}
-        />
-        <button onClick={sendMsg}>Send</button>
-      </section>
+      {!isLoggedIn ? (
+        <section className="auth-section">
+          <h3>{isRegistering ? "Register" : "Login"}</h3>
+          <input type="text" value={username} onChange={(e) => setUsername(e.target.value)} placeholder="Username" />
+          <input
+            type="password"
+            value={password}
+            onChange={(e) => {
+              setPassword(e.target.value);
+              checkPasswordStrength(e.target.value);
+            }}
+            placeholder="Password"
+          />
+          {isRegistering && <p className={`strength ${passwordStrength.toLowerCase()}`}>Strength: {passwordStrength}</p>}
+          <button onClick={isRegistering ? register : login}>{isRegistering ? "Register" : "Login"}</button>
+          <button className="toggle-auth" onClick={() => setIsRegistering(!isRegistering)}>
+            {isRegistering ? "Already have an account? Login" : "No account? Register"}
+          </button>
+          <p>{authMessage}</p>
+        </section>
+      ) : (
+        <p>Welcome! You're logged in.</p>
+      )}
     </div>
   );
 };
